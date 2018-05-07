@@ -8,10 +8,12 @@ import requests
 from requests.exceptions import HTTPError
 import six
 import json
+import re
+import email
+import logging
 from datetime import datetime
 from os import path
 from abc import ABCMeta, abstractmethod
-
 try:
     from urllib.parse import urlencode
     from urllib.parse import urlunparse
@@ -20,9 +22,8 @@ except ImportError:
     from urlparse import urlunparse
 from bs4 import BeautifulSoup
 from time import sleep, time, mktime
-import logging
 from fake_useragent import UserAgent, settings as fake_useragent_settings
-import email
+
 
 
 __author__ = 'Tom Dickinson, Flavio Martins, David Semedo'
@@ -118,15 +119,15 @@ class TwitterSearch:
             # 400 Bad Request
             if e.response.status_code == 400:
                 logger.debug("HTTP 400 - Bad request")
-                return response.json()
+                return e.response.json()
             elif e.response.status_code == 429:
-                now_ts = datetime.datetime.utcnow().timestamp()
+                now_ts = datetime.utcnow().timestamp()
                 logger.debug("HTTP 429 - Too many requests")
                 logger.debug(e.response.headers)
                 utc_reset_ts = int(e.response.headers['x-rate-limit-reset'])
                 reset = utc_reset_ts - now_ts
                 logger.debug("Reset time: %s", str(reset))
-                # Multiply by small delay for paranoid reasons.
+                # Multiply by error delay for paranoid reasons.
                 seconds = reset * self.error_delay
                 logger.debug("Going to sleep for %s seconds.", str(seconds))
                 sleep(seconds)
