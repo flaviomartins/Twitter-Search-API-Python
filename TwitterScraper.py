@@ -19,9 +19,10 @@ except ImportError:
     from urllib import urlencode
     from urlparse import urlunparse
 from bs4 import BeautifulSoup
-from time import sleep
+from time import sleep, time, mktime
 import logging
 from fake_useragent import UserAgent, settings as fake_useragent_settings
+import email
 
 
 __author__ = 'Tom Dickinson, Flavio Martins, David Semedo'
@@ -116,17 +117,44 @@ class TwitterSearch:
         except HTTPError as e:
             # 400 Bad Request
             if e.response.status_code == 400:
+                logger.debug("HTTP 400 - Bad request")
                 return response.json()
+            elif e.response.status_code == 429:
+                now_ts = datetime.datetime.utcnow().timestamp()
+                logger.debug("HTTP 429 - Too many requests")
+                logger.debug(e.response.headers)
+                utc_reset_ts = int(e.response.headers['x-rate-limit-reset'])
+                reset = utc_reset_ts - now_ts
+                logger.debug("Reset time: %s", str(reset))
+                # Multiply by small delay for paranoid reasons.
+                seconds = reset * self.error_delay
+                logger.debug("Going to sleep for %s seconds.", str(seconds))
+                sleep(seconds)
             else:
-                logger.error("Sleeping for %i", self.error_delay)
-                sleep(self.error_delay)
+                retry_after = e.response.headers['retry-after']
+                reset_seconds = 1
+
+                if retry_after is not None:
+                    if re.match("([0-9])+", retry_after):
+                        reset_seconds = int(retry_after)
+                    else:
+                        retry_after_tuple = email.utils.parsedate(retry_after)
+                        if retry_after_tuple is None:
+                            logger.error("Invalid Retry-After header: %s" % retry_after)
+                        retry_date = mktime(retry_after_tuple)
+                        reset_seconds = retry_date - time()
+
+                logger.error(e.response.message)
+                total_sleep = reset_seconds * self.error_delay
+                logger.info("Sleeping for %i", total_sleep)
+                sleep(total_sleep)
+                
                 if retry_num % MAX_RETRIES_SESSION == 0 and retry_num > 0:
                     headers = {'User-Agent': self.UA.random}
                     self.session.headers.update(headers)
                 elif retry_num == MAX_RETRIES:
                     return None
-
-                return self.execute_search(url, retry_num + 1)
+            return self.execute_search(url, retry_num + 1)
 
     @staticmethod
     def parse_tweets(items_html):
