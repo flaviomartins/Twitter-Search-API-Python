@@ -132,7 +132,7 @@ class TwitterSearch:
                 logger.debug("Going to sleep for %s seconds.", str(seconds))
                 sleep(seconds)
             else:
-                retry_after = e.response.headers['retry-after']
+                retry_after = e.response.headers.get('retry-after', None)
                 reset_seconds = 1
 
                 if retry_after is not None:
@@ -145,11 +145,12 @@ class TwitterSearch:
                         retry_date = mktime(retry_after_tuple)
                         reset_seconds = retry_date - time()
 
+                logger.error(e.response.headers)
                 logger.error(e.response.message)
                 total_sleep = reset_seconds * self.error_delay
                 logger.info("Sleeping for %i", total_sleep)
                 sleep(total_sleep)
-                
+
                 if retry_num % MAX_RETRIES_SESSION == 0 and retry_num > 0:
                     headers = {'User-Agent': self.UA.random}
                     self.session.headers.update(headers)
